@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <style>
+      body {
+          margin: 0;
+          overflow: hidden;
+          background-color: #000000;
+      }
+      canvas {
+          display: block;
+      }
+  </style>
+</head>
+<body>
+
+  <canvas id="canvas" style="object-fit: contain; width: 100vw; height: 100vh;"></canvas>
+
+  <script>
+  /*Release canvas from memory*/
+    function releaseCanvas(canvas) {
+      canvas.width = 1;
+      canvas.style.width = "1vw";
+      canvas.height = 1;
+      canvas.style.height = "1vh";
+      const ctx = canvas.getContext('2d');
+      ctx && ctx.clearRect(0, 0, 1, 1);
+      canvas.remove();
+    }
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  let startTime = Date.now();
+let fadeToColor = false;
+let fading = false;
+
+// Set canvas dimensions
+canvas.width = 3840;
+canvas.height = 2160;
+
+const text = "₳";
+const fontSize = 3072;
+const cubeSize = 20;
+const cubes = [];
+let colorChangeSpeed;
+
+let isAndroid = /Android/i.test(navigator.userAgent);
+let isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+if (isAndroid) {
+    // Adjust color change speed for Android
+    colorChangeSpeed = 0.0001; // speed in milliseconds
+} else if (isIOS) {
+    // Adjust color change speed for iOS
+    colorChangeSpeed = 100; // speed in milliseconds
+} else {
+    // Default color change speed
+    colorChangeSpeed = 0.0001; // speed in milliseconds
+}
+
+
+
+
+let colors = [];
+let snake = [];
+
+class Cube {
+    constructor(x, y, targetX, targetY, maxHoverOffset) {
+        this.x = x;
+        this.y = y;
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.colorIndex = 0; // Start with the initial color
+        this.size = cubeSize;
+        this.neighbors = [];
+        this.visited = false; // Track if the cube has been visited
+        this.hoverOffsetX = (Math.random() - 0.5) * maxHoverOffset;
+        this.hoverOffsetY = (Math.random() - 0.5) * maxHoverOffset;
+        this.maxHoverOffset = maxHoverOffset; // Initial max hover offset
+    }
+
+    draw() {
+        ctx.fillStyle = colors[this.colorIndex];
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.fillStyle = 'rgba(0,0,0,.7)';
+        ctx.fillRect(this.x + this.size * 0.1, this.y + this.size * 0.1, this.size, this.size);
+    }
+
+    update() {
+        const speed = 0.05; // Adjust this value to change the speed of cube movement
+        const hoverDistance = 5; // Distance to hover around the target position
+
+        // Apply random hover offset
+        if (Math.random() < 0.1) { // Update hover offset randomly
+            this.hoverOffsetX = (Math.random() - 0.5) * this.maxHoverOffset;
+            this.hoverOffsetY = (Math.random() - 0.5) * this.maxHoverOffset;
+        }
+
+        const targetX = this.targetX + this.hoverOffsetX;
+        const targetY = this.targetY + this.hoverOffsetY;
+        const deltaX = targetX - this.x;
+        const deltaY = targetY - this.y;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        if (distance > hoverDistance) {
+            this.x += (deltaX / distance) * speed * distance;
+            this.y += (deltaY / distance) * speed * distance;
+        }
+    }
+
+    changeColor() {
+        this.colorIndex = (this.colorIndex + 1) % colors.length;
+    }
+
+    fadeToSingleColor(targetColorIndex, alpha) {
+        const currentRGB = colors[this.colorIndex].match(/\d+/g).map(Number);
+        const targetRGB = colors[targetColorIndex].match(/\d+/g).map(Number);
+
+        const newRGB = currentRGB.map((c, i) => {
+            return Math.floor(c + (targetRGB[i] - c) * alpha);
+        });
+
+        this.colorIndex = colors.findIndex(
+            color =>
+                color === `rgb(${newRGB[0]}, ${newRGB[1]}, ${newRGB[2]})`
+        );
+
+        if (this.colorIndex === -1) {
+            colors.push(`rgb(${newRGB[0]}, ${newRGB[1]}, ${newRGB[2]})`);
+            this.colorIndex = colors.length - 1;
+        }
+    }
+}
+
+function getRandomColor(excludeColor) {
+    let color;
+    do {
+        color = `rgb(${Math.floor(Math.random() * 256)}, ${Math.floor(Math.random() * 256)}, ${Math.floor(Math.random() * 256)})`;
+    } while (color === excludeColor);
+    return color;
+}
+
+function assignRandomColors() {
+    colors = [];
+    const mainTextColor = `rgb(${Math.floor(Math.random() * 256)}, ${Math.floor(Math.random() * 256)}, ${Math.floor(Math.random() * 256)})`;
+    for (let i = 0; i < 5; i++) {
+        colors.push(getRandomColor(mainTextColor));
+    }
+    colors.push(mainTextColor); // Ensuring the main text color is part of the colors array
+}
+
+function initCubes() {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+
+    ctx.font = `${fontSize}px Arial`;
+    const textWidth = ctx.measureText(text).width;
+    const textHeight = fontSize; // Since we're using a fixed font size
+
+    // Calculate the position to start drawing the text so that it is centered
+    const startX = (canvas.width - textWidth) / 2;
+    const startY = (canvas.height + textHeight) / 2.375;
+
+    let isAndroid = /Android/i.test(navigator.userAgent);
+    let isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // Draw the text multiple times with slight offsets to create a thicker appearance
+    const offsets = [
+        { x: 0, y: 0 },
+        { x: 30, y: 0 },
+        { x: -30, y: 0 },
+        { x: 0, y: 30 },
+        { x: 0, y: -30 },
+        { x: 15, y: 15 },
+        { x: -15, y: -15 },
+        { x: 15, y: -15 },
+        { x: -15, y: 15 },
+    ];
+
+    // Draw the text in black
+    ctx.fillStyle = 'black';
+    ctx.fillText(text, startX, startY);
+
+    // Cycle through the colors array to draw the text with different colors
+    const mainTextColorIndex = colors.length - 1; // Last color is the main text color
+    offsets.forEach((offset, index) => {
+        ctx.fillStyle = colors[mainTextColorIndex];
+        ctx.fillText(text, startX + offset.x, startY + offset.y);
+    });
+
+    const textData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    // Initialize cubes around the text
+    for (let y = 0; y < canvas.height; y += cubeSize) {
+        for (let x = 0; x < canvas.width; x += cubeSize) {
+            const index = (y * canvas.width + x) * 4;
+            if (textData[index + 3] > 128) {
+    let maxHoverOffset;
+    if (isAndroid) {
+        // Adjust maxHoverOffset based on fade progress for Android
+        maxHoverOffset = 3000;
+    } else if (isIOS) {
+        // Adjust maxHoverOffset based on fade progress for iOS
+        maxHoverOffset = 2000;
+    } else {
+        // Default maxHoverOffset value
+        maxHoverOffset = 3000;
+    }
+
+    const cube = new Cube(
+        x,
+        y,
+        x,
+        y,
+        maxHoverOffset
+    );
+
+    cubes.push(cube);
+}
+
+        }
+    }
+
+    // Find neighbors
+    for (let i = 0; i < cubes.length; i++) {
+        const cube = cubes[i];
+        cube.neighbors = cubes.filter(other =>
+            other !== cube &&
+            Math.abs(other.targetX - cube.targetX) <= cubeSize &&
+            Math.abs(other.targetY - cube.targetY) <= cubeSize
+        );
+    }
+}
+
+// Function to animate cubes
+function animate() {
+    // Clear the canvas with a black background
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (const cube of cubes) {
+        cube.update();
+        cube.draw();
+    }
+    animationId = requestAnimationFrame(animate);
+}
+
+function waveColorChange() {
+    const snakeSize = 50; // Number of cubes in the snake
+
+    if (!fading) {
+        if (snake.length === 0) {
+            // Initialize the snake with a random starting point around a random cube
+            const randomCube = cubes[Math.floor(Math.random() * cubes.length)];
+            snake.push(randomCube);
+            randomCube.visited = true; // Mark the starting cube as visited
+        }
+
+        // Move each cube in the snake randomly to a neighboring cube
+        for (let i = 0; i < snake.length; i++) {
+            const cube = snake[i];
+            cube.changeColor();
+
+            // Select a random neighboring cube
+            const neighbors = cube.neighbors.filter(neighbor => !neighbor.visited);
+            if (neighbors.length > 0) {
+                const nextCube = neighbors[Math.floor(Math.random() * neighbors.length)];
+                snake[i] = nextCube;
+                nextCube.visited = true; // Mark the cube as visited
+            } else {
+                // No unvisited neighbors, backtrack to a previous cube
+                snake.splice(i, 1);
+                i--; // Correct index due to removal
+            }
+        }
+
+        // Ensure the snake retains its length
+        while (snake.length < snakeSize) {
+            const lastCube = snake[snake.length - 1];
+            let nextCube;
+
+            // Look for neighboring cubes within a certain distance
+            const potentialNeighbors = lastCube.neighbors.filter(cube => !cube.visited);
+
+            if (potentialNeighbors.length > 0) {
+                // If there are potential neighbors, randomly select one
+                nextCube = potentialNeighbors[Math.floor(Math.random() * potentialNeighbors.length)];
+            } else {
+                // If no available neighbor within close proximity, randomly select any neighbor
+                nextCube = lastCube.neighbors[Math.floor(Math.random() * lastCube.neighbors.length)];
+            }
+
+            if (nextCube) {
+                snake.push(nextCube);
+                nextCube.visited = true;
+            } else {
+                // If no nextCube found, break out to prevent infinite loop
+                break;
+            }
+        }
+
+        // If the snake fails to move, reset it
+        if (snake.length === 0) {
+            const randomCube = cubes[Math.floor(Math.random() * cubes.length)];
+            snake.push(randomCube);
+            randomCube.visited = true;
+        }
+    }
+
+    // Check if 15 seconds have passed
+    if (Date.now() - startTime >= 15000) {
+        if (!fading) {
+            // Clear the canvas before starting the explosion
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            fadeToColor = true;
+            fadeStartTime = Date.now();
+            nextColor = Math.floor(Math.random() * (colors.length - 1)); // Exclude the last color (black)
+            fading = true;
+            // Clear snake and reset visited status of all cubes
+            snake = [];
+            cubes.forEach(cube => {
+                cube.visited = false;
+                cube.colorIndex = nextColor; // Apply the new color
+            });
+        }
+    }
+
+ // If fading to single color
+ if (fadeToColor) {
+     const fadeDuration = 1000; // 2 seconds to fade
+     const elapsedTime = Date.now() - fadeStartTime;
+     const alpha = Math.min(elapsedTime / fadeDuration, 1);
+
+     for (const cube of cubes) {
+         cube.fadeToSingleColor(nextColor, alpha);
+
+         let isAndroid = /Android/i.test(navigator.userAgent);
+         let isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+         if (isAndroid) {
+         // Adjust maxHoverOffset based on fade progress for Android
+         cube.maxHoverOffset = 3000 - (2990 * alpha);
+     } else if (isIOS) {
+         // Adjust maxHoverOffset based on fade progress for iOS
+         cube.maxHoverOffset = 2000 - (9990 * alpha);
+     } else {
+         // Default adjustment if neither Android nor iOS
+         cube.maxHoverOffset = 3000 - (2990 * alpha);
+     }
+
+     }
+
+     if (elapsedTime >= fadeDuration) {
+         fadeToColor = false;
+         fading = false;
+         startTime = Date.now(); // Restart the snake process
+     }
+ }
+
+ // When the explosion ends, spread out all cubes evenly
+ if (!fading && Date.now() - startTime >= 15000) {
+     const maxRadius = Math.min(canvas.width, canvas.height) / 2; // Max distance from center
+     const center = { x: canvas.width / 2, y: canvas.height / 2 };
+
+     // Move each cube away from the center
+     for (const cube of cubes) {
+         const deltaX = cube.x - center.x;
+         const deltaY = cube.y - center.y;
+         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+         const angle = Math.atan2(deltaY, deltaX);
+
+         const targetX = center.x + Math.cos(angle) * maxRadius;
+         const targetY = center.y + Math.sin(angle) * maxRadius;
+
+         // Smoothly move cubes to their target positions
+         cube.targetX = targetX;
+         cube.targetY = targetY;
+         cube.colorIndex = Math.floor(Math.random() * (colors.length - 1)); // Random color index (excluding black)
+     }
+ }
+}
+
+// Clear the canvas with a black background
+ctx.fillStyle = 'black';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+// Call initCubes() to initialize cubes
+initCubes();
+
+// Now, you can gradually reduce the maxHoverOffset over time
+function updateCubes() {
+ const fadeDuration = 1000; // 5 seconds to fade
+    const elapsedTime = Date.now() - startTime;
+    const alpha = Math.min(elapsedTime / fadeDuration, 1);
+
+    for (const cube of cubes) {
+
+      let isAndroid = /Android/i.test(navigator.userAgent);
+      let isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+      if (isAndroid) {
+      // Adjust maxHoverOffset based on fade progress for Android
+      cube.maxHoverOffset = 3000 - (2990 * alpha);
+  } else if (isIOS) {
+      // Adjust maxHoverOffset based on fade progress for iOS
+      cube.maxHoverOffset = 2000 - (9990 * alpha);
+  } else {
+      // Default adjustment if neither Android nor iOS
+      cube.maxHoverOffset = 3000 - (2990 * alpha);
+  }
+    }
+
+    // Call updateCubes repeatedly until the fading is complete
+    if (elapsedTime < fadeDuration) {
+        requestAnimationFrame(updateCubes);
+    }
+}
+
+// Call updateCubes() after initialization to gradually reduce maxHoverOffset
+updateCubes();
+
+// Function to animate cubes
+function animate() {
+    for (const cube of cubes) {
+        cube.update();
+        cube.draw();
+    }
+    animationId = requestAnimationFrame(animate);
+}
+
+// Start animation
+animate();
+
+// Call waveColorChange function at an interval
+setInterval(waveColorChange, colorChangeSpeed);
+
+// Event listener to reload page on canvas click
+document.querySelector("canvas").addEventListener("click", function () {
+    location.reload();
+});
+
+// Function to assign random colors
+function assignRandomColors() {
+    colors = [];
+    const mainTextColor = `rgb(${Math.floor(Math.random() * 156) + 100}, ${Math.floor(Math.random() * 156) + 100}, ${Math.floor(Math.random() * 156) + 100})`;
+    for (let i = 0; i < 5; i++) {
+        colors.push(getRandomColor(mainTextColor));
+    }
+    colors.push(mainTextColor); // Ensuring the main text color is part of the colors array
+}
+
+// Function to get random color
+function getRandomColor(excludeColor) {
+    let color;
+    do {
+        color = `rgb(${Math.floor(Math.random() * 156) + 100}, ${Math.floor(Math.random() * 156) + 100}, ${Math.floor(Math.random() * 156) + 100})`;
+    } while (color === excludeColor || colorIsDark(color));
+    return color;
+}
+
+// Function to check if color is dark
+function colorIsDark(color) {
+    // Calculate the perceived brightness of a color
+    const [r, g, b] = color.match(/\d+/g).map(Number);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    return brightness < 128;
+}
+
+// Call waveColorChange function at an interval
+setInterval(waveColorChange, colorChangeSpeed);
+
+// Event listener to reload page on canvas click
+document.querySelector("canvas").addEventListener("click", function () {
+    location.reload();
+});
+
+// Assign random colors and initialize cubes
+assignRandomColors();
+initCubes();
+animationId = requestAnimationFrame(animate);
+
+/*Run release even when they refresh not with click (F5, refresh button, closing page)*/
+      window.addEventListener('pagehide', (event) => {
+      /*Release every canvas*/
+      var canvases = document.getElementsByTagName("canvas");
+      var canvasesList = Array.prototype.slice.call(canvases);
+            canvasesList.forEach(releaseCanvas);
+      });
+
+</script>
+</body>
+</html>
